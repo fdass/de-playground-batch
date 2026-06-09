@@ -1,0 +1,155 @@
+services:
+
+  postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-hive}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-hivepass}
+      POSTGRES_DB: ${POSTGRES_DB:-metastore}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-hive} -d ${POSTGRES_DB:-metastore}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - denet
+
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+    volumes:
+      - miniodata:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    networks:
+      - denet
+
+  minio-init:
+    image: minio/mc:latest
+    entrypoint: >
+      /bin/sh -c "
+      until /usr/bin/mc alias set minio http://minio:9000 minioadmin minioadmin 2>/dev/null; do
+        echo 'Waiting for MinIO...';
+        sleep 2;
+      done;
+      /usr/bin/mc mb minio/warehouse --ignore-existing;
+      echo 'MinIO bucket warehouse ready';
+      "
+    depends_on:
+      minio:
+        condition: service_healthy
+    networks:
+      - denet
+
+  metastore:
+    image: de-hive:4.2.0
+    environment:
+      SERVICE_NAME: metastore
+      DB_DRIVER: postgres
+      HIVE_CUSTOM_CONF_DIR: /hive-custom-conf
+    volumes:
+      - ./config/core-site.xml:/hive-custom-conf/core-site.xml:ro
+      - ./config/hive-site.xml:/hive-custom-conf/hive-site.xml:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "9083"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+    networks:
+      - denet
+
+  hiveserver2:
+    image: de-hive:4.2.0
+    environment:
+      SERVICE_NAME: hiveserver2
+      HIVE_CUSTOM_CONF_DIR: /hive-custom-conf
+      IS_RESUME: "true"
+      VERBOSE: "true"
+      SERVICE_OPTS: "-Dlog4j2.configurationFile=/opt/hive/conf/hive-log4j2.properties"
+    volumes:
+      - ./config/core-site.xml:/hive-custom-conf/core-site.xml:ro
+      - ./config/hive-site.xml:/hive-custom-conf/hive-site.xml:ro
+      - ./config/hive-log4j2.properties:/hive-custom-conf/hive-log4j2.properties
+    ports:
+      - "${HIVE_SERVER2_PORT:-10000}:10000"
+      - "${HIVE_SERVER2_WEBUI_PORT:-10002}:10002"
+    depends_on:
+      metastore:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "10000"]
+      interval: 10s
+      timeout: 10s
+      retries: 15
+      start_period: 60s
+    networks:
+      - denet
+
+  spark-master:
+    image: de-spark:3.5.5
+    command: /opt/spark/bin/spark-class org.apache.spark.deploy.master.Master
+    environment:
+      SPARK_MASTER_HOST: spark-master
+    volumes:
+      - ./config/core-site.xml:/opt/spark/conf/core-site.xml
+      - ./config/hive-site.xml:/opt/spark/conf/hive-site.xml
+      - ./config/spark-defaults.conf:/opt/spark/conf/spark-defaults.conf
+    ports:
+      - "${SPARK_MASTER_PORT:-7077}:7077"
+      - "${SPARK_MASTER_WEBUI_PORT:-8080}:8080"
+    networks:
+      - denet
+
+  spark-worker:
+    image: de-spark:3.5.5
+    command: /opt/spark/bin/spark-class org.apache.spark.deploy.worker.Worker spark://spark-master:7077
+    environment:
+      SPARK_WORKER_WEBUI_PORT: ${SPARK_WORKER_WEBUI_PORT:-8081}
+    volumes:
+      - ./config/core-site.xml:/opt/spark/conf/core-site.xml
+      - ./config/hive-site.xml:/opt/spark/conf/hive-site.xml
+      - ./config/spark-defaults.conf:/opt/spark/conf/spark-defaults.conf
+    depends_on:
+      - spark-master
+      - hiveserver2
+    ports:
+      - "${SPARK_WORKER_WEBUI_PORT:-8081}:8081"
+    networks:
+      - denet
+
+  hue:
+    image: gethue/hue:latest
+    volumes:
+      - ./config/hue.ini:/hue/desktop/conf/hue.ini
+    ports:
+      - "8888:8888"
+    depends_on:
+      hiveserver2:
+        condition: service_healthy
+    networks:
+      - denet
+
+volumes:
+  pgdata:
+  miniodata:
+
+networks:
+  denet:
+    driver: bridge

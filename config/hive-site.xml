@@ -1,0 +1,104 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+
+    <property>
+        <name>hive.metastore.uris</name>
+        <value>thrift://metastore:9083</value>
+    </property>
+
+    <property>
+        <name>hive.metastore.warehouse.dir</name>
+        <value>s3a://warehouse/</value>
+    </property>
+
+    <property>
+        <name>javax.jdo.option.ConnectionDriverName</name>
+        <value>org.postgresql.Driver</value>
+    </property>
+
+    <property>
+        <name>javax.jdo.option.ConnectionURL</name>
+        <value>jdbc:postgresql://postgres:5432/metastore</value>
+    </property>
+
+    <property>
+        <name>javax.jdo.option.ConnectionUserName</name>
+        <value>hive</value>
+    </property>
+
+    <property>
+        <name>javax.jdo.option.ConnectionPassword</name>
+        <value>hivepass</value>
+    </property>
+
+    <property>
+        <name>hive.server2.thrift.port</name>
+        <value>10000</value>
+    </property>
+
+    <property>
+        <name>hive.server2.thrift.bind.host</name>
+        <value>0.0.0.0</value>
+    </property>
+
+    <property>
+        <name>hive.server2.webui.port</name>
+        <value>10002</value>
+    </property>
+
+    <property>
+        <name>hive.server2.authentication</name>
+        <value>NOSASL</value>
+    </property>
+
+    <property>
+        <name>hive.exec.scratchdir</name>
+        <value>/tmp/hive</value>
+    </property>
+
+    <property>
+        <name>hive.exec.local.scratchdir</name>
+        <value>/tmp/hive-local</value>
+    </property>
+
+    <property>
+        <name>hive.execution.engine</name>
+        <value>mr</value>
+    </property>
+
+    <property>
+        <name>hive.server2.max.start.attempts</name>
+        <value>1</value>
+    </property>
+
+    <property>
+        <name>hive.server2.support.dynamic.service.discovery</name>
+        <value>false</value>
+    </property>
+
+    <property>
+        <name>hive.query.history.enabled</name>
+        <value>false</value>
+    </property>
+
+    <property>
+        <name>hive.scheduled.queries.executor.enabled</name>
+        <value>false</value>
+    </property>
+
+    <property>
+        <name>hive.privilege.synchronizer.interval</name>
+        <value>0</value>
+    </property>
+
+    <property>
+        <name>hive.notification.event.poll.interval</name>
+        <value>0</value>
+    </property>
+
+    <property>
+        <name>hive.metastore.event.db.notification.api.auth</name>
+        <value>false</value>
+    </property>
+
+</configuration>

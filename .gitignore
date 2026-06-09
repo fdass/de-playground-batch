@@ -1,0 +1,30 @@
+# Credentials
+.env
+
+# Debug notes (temporary RCA)
+notif_poll_case.md
+rca_hs2.md
+
+# Docker volumes (persisted data)
+pgdata/
+miniodata/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# macOS
+.DS_Store
+
+# Python
+__pycache__/
+*.pyc
+
+# Docker build cache artifacts
+docker/**/libs/
+
+# Shell
+*.log
