@@ -61,6 +61,7 @@ services:
     volumes:
       - ./config/core-site.xml:/hive-custom-conf/core-site.xml:ro
       - ./config/hive-site.xml:/hive-custom-conf/hive-site.xml:ro
+      - ./config/core-site.xml:/opt/hadoop/etc/hadoop/core-site.xml:ro
     depends_on:
       postgres:
         condition: service_healthy
@@ -87,6 +88,7 @@ services:
       - ./config/core-site.xml:/hive-custom-conf/core-site.xml:ro
       - ./config/hive-site.xml:/hive-custom-conf/hive-site.xml:ro
       - ./config/hive-log4j2.properties:/hive-custom-conf/hive-log4j2.properties
+      - ./config/core-site.xml:/opt/hadoop/etc/hadoop/core-site.xml:ro
     ports:
       - "${HIVE_SERVER2_PORT:-10000}:10000"
       - "${HIVE_SERVER2_WEBUI_PORT:-10002}:10002"
@@ -135,14 +137,23 @@ services:
       - denet
 
   hue:
-    image: gethue/hue:latest
+    build: ./docker/hue
+    image: de-hue:local
     volumes:
       - ./config/hue.ini:/usr/share/hue/desktop/conf/z-hue.ini:ro
     ports:
       - "8888:8888"
     depends_on:
+      postgres:
+        condition: service_healthy
       hiveserver2:
         condition: service_healthy
+    command: >
+      bash -c "
+        cd /usr/share/hue &&
+        ./build/env/bin/hue migrate --run-syncdb &&
+        ./build/env/bin/supervisor
+      "
     networks:
       - denet
 
