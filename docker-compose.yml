@@ -137,7 +137,7 @@ services:
   hue:
     image: gethue/hue:latest
     volumes:
-      - ./config/hue.ini:/hue/desktop/conf/hue.ini
+      - ./config/hue.ini:/usr/share/hue/desktop/conf/z-hue.ini:ro
     ports:
       - "8888:8888"
     depends_on:
