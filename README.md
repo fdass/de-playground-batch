@@ -37,7 +37,7 @@ A containerized Data Engineering playground that replaces traditional HDFS with 
 
 ```bash
 # 1. Build the custom images (adds S3A JARs + AWS SDK)
-docker build -t de-hive:4.2.0 docker/hive/
+docker build -t de-hive:3.1.3 docker/hive/
 docker build -t de-spark:3.5.5 docker/spark/
 
 # 2. Start the stack
@@ -86,8 +86,8 @@ docker compose down -v   # removes containers + volumes (resets all data)
 |---------|-------|---------|------|
 | **MinIO** | `minio/minio:latest` | 9000, 9001 | S3-compatible object storage |
 | **PostgreSQL** | `postgres:15` | 5432 | Hive Metastore backend |
-| **Hive Metastore** | `de-hive:4.2.0` | 9083 | Table schema registry |
-| **HiveServer2** | `de-hive:4.2.0` | 10000, 10002 | SQL query engine (JDBC/Thrift) |
+| **Hive Metastore** | `de-hive:3.1.3` | 9083 | Table schema registry |
+| **HiveServer2** | `de-hive:3.1.3` | 10000, 10002 | SQL query engine (JDBC/Thrift) |
 | **Spark Master** | `de-spark:3.5.5` | 7077, 8080 | Cluster manager |
 | **Spark Worker** | `de-spark:3.5.5` | 8081 | Task executor |
 | **Hue** | `gethue/hue:latest` | 8888 | SQL editor web UI |
@@ -106,7 +106,7 @@ de-playground/
 │   └── hive-log4j2.properties      # Log4j2 config (for debugging)
 ├── docker/
 │   ├── hive/
-│   │   └── Dockerfile              # FROM apache/hive:4.2.0 + AWS SDK v2
+│   │   └── Dockerfile              # FROM apache/hive:3.1.3 + AWS SDK v1
 │   └── spark/
 │       └── Dockerfile              # FROM apache/spark:3.5.5 + hadoop-aws
 └── scripts/
@@ -118,7 +118,7 @@ de-playground/
 ### Why custom Docker images?
 
 The base `apache/hive` and `apache/spark` images do not include the AWS S3 filesystem JARs. The custom Dockerfiles add:
-- **Hive**: `hadoop-aws` (symlinked from the image's Hadoop tools), `bundle-2.42.25.jar` (AWS SDK v2), `postgresql-42.7.3.jar` (JDBC driver)
+- **Hive**: `hadoop-aws` (symlinked from the image's Hadoop tools), `aws-java-sdk-bundle-1.11.271.jar` (AWS SDK v1), `postgresql-42.7.3.jar` (JDBC driver)
 - **Spark**: `hadoop-aws-3.3.4.jar`, `aws-java-sdk-bundle-1.12.262.jar`
 
 ### Key config properties
@@ -128,10 +128,12 @@ The base `apache/hive` and `apache/spark` images do not include the AWS S3 files
 | `fs.s3a.endpoint=http://minio:9000` | `core-site.xml` | Points S3A to MinIO instead of AWS |
 | `fs.s3a.path.style.access=true` | `core-site.xml` | Required for MinIO (no DNS bucket names) |
 | `hive.metastore.warehouse.dir=s3a://warehouse/` | `hive-site.xml` | All table data stored in MinIO |
-| `hive.metastore.event.db.notification.api.auth=false` | `hive-site.xml` | Required — disables notification API auth that HS2 can't satisfy without proxy config |
 | `hive.execution.engine=mr` | `hive-site.xml` | Uses MapReduce local mode (no YARN needed) |
+| `hive.exec.scratchdir=file:///tmp/hive` | `hive-site.xml` | Local scratch dir (Hive 3.x requires 0777 perms on this dir) |
 | `hive.server2.authentication=NOSASL` | `hive-site.xml` | No auth for local playground use |
 | `COMPOSE_PROJECT_NAME=de` | `.env` | Short project name (avoids DNS FQDN length issues) |
+| Network `name: denet` | `docker-compose.yml` | Named network avoids underscore in DNS domain (Hive 3.x URI parser rejects underscores) |
+| `hostname: metastore` | `docker-compose.yml` | Metastore container hostname overrides Docker-generated FQDN for Thrift URI compatibility |
 
 ### Volume mounts are read-only
 
@@ -139,7 +141,7 @@ Config files in `config/` are mounted as `:ro` (read-only). This prevents the Hi
 
 ### Schema initialization
 
-The Metastore entrypoint runs `schematool -dbType postgres -initOrUpgradeSchema` automatically on first start. On subsequent starts with `IS_RESUME=true` (set for HiveServer2), schema init is skipped. PostgreSQL data persists across restarts via Docker volumes.
+The Metastore entrypoint runs `schematool -dbType postgres -initSchema` automatically on first start. On subsequent starts with `IS_RESUME=true` (set for HiveServer2), schema init is skipped. PostgreSQL data persists across restarts via Docker volumes.
 
 ## Sample Usage
 
@@ -163,13 +165,17 @@ INSERT INTO sample VALUES (1, 'hello'), (2, 'world');
 SELECT * FROM sample;
 ```
 
-### Via beeline (workaround for JDK 21)
-
-Hive 4.2.0 runs on JDK 21, which has a JLine terminal incompatibility. Pipe queries via stdin:
+### Via beeline
 
 ```bash
 echo "SHOW DATABASES;" | \
   docker exec -i de-hiveserver2-1 beeline -u 'jdbc:hive2://localhost:10000' --force=true
+```
+
+You can also run beeline interactively:
+
+```bash
+docker exec -it de-hiveserver2-1 beeline -u 'jdbc:hive2://localhost:10000'
 ```
 
 ### Via Spark SQL
@@ -192,19 +198,31 @@ Open [http://localhost:9001](http://localhost:9001), log in with `minioadmin`/`m
 
 ## Known Issues
 
-### Beeline terminal error (JDK 21)
-
-`java.lang.IllegalStateException: Unable to create a terminal`
-
-Hive 4.2.0 bundles JLine 3.25 which uses JDK 22 preview FFI APIs. Workaround: pipe queries via stdin (see above), or use Hue's web UI instead.
-
 ### First startup is slow
 
 The initial `docker compose up` downloads ~2.5 GB of images and runs schema initialization. Subsequent starts are fast (~15 seconds).
 
-### Config file overwrite
+### Hue fails after fresh start (`docker compose down -v`)
 
-Do not run `docker compose restart` (which reuses containers) after changing config files. Always use `docker compose down && docker compose up -d` to get fresh containers with new configs.
+Hue requires the `hue` database and user in PostgreSQL. After a full teardown with volumes (`docker compose down -v`), re-create them:
+
+```bash
+docker exec de-postgres-1 psql -U hive -d metastore -c "CREATE DATABASE hue;"
+docker exec de-postgres-1 psql -U hive -d metastore -c "CREATE USER hue WITH PASSWORD 'hue';"
+docker exec de-postgres-1 psql -U hive -d metastore -c "GRANT ALL PRIVILEGES ON DATABASE hue TO hue;"
+docker exec de-postgres-1 psql -U hive -d hue -c "GRANT ALL ON SCHEMA public TO hue;"
+docker compose up -d hue
+```
+
+### Beeline connection fails in Hive 3.1.3
+
+Hive 3.1.3's beeline has a Thrift binary protocol version handshake issue with HS2 in the same image. Use **spark-sql** or **pyspark** for interactive Hive queries instead:
+
+```bash
+docker exec -it de-spark-master-1 /opt/spark/bin/spark-sql --master spark://spark-master:7077
+```
+
+### Config file overwrite
 
 ## Resources
 

@@ -58,7 +58,7 @@
 
     <property>
         <name>hive.exec.scratchdir</name>
-        <value>/tmp/hive</value>
+        <value>file:///tmp/hive</value>
     </property>
 
     <property>
@@ -78,31 +78,6 @@
 
     <property>
         <name>hive.server2.support.dynamic.service.discovery</name>
-        <value>false</value>
-    </property>
-
-    <property>
-        <name>hive.query.history.enabled</name>
-        <value>false</value>
-    </property>
-
-    <property>
-        <name>hive.scheduled.queries.executor.enabled</name>
-        <value>false</value>
-    </property>
-
-    <property>
-        <name>hive.privilege.synchronizer.interval</name>
-        <value>0</value>
-    </property>
-
-    <property>
-        <name>hive.notification.event.poll.interval</name>
-        <value>0</value>
-    </property>
-
-    <property>
-        <name>hive.metastore.event.db.notification.api.auth</name>
         <value>false</value>
     </property>
 
